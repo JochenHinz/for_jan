@@ -8,7 +8,7 @@ import preprocessor as prep
 import utilities as ut
 
 
-def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
+def main(angle = np.linspace(0,np.pi,200), extrapolate = True, repair_defects = True):
     
     
     ####### snail point cloud cusp points etc #######
@@ -20,6 +20,7 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
             row = l.split()
             left.append(np.array([float(row[i]) for i in range(2)])[:,None])
     left_pc = np.roll(np.concatenate(left, axis = 1),250, axis = 1)
+    left_pc = ndspline(rep.discrete_length_param(left_pc), left_pc, k = 3)(np.linspace(0,1,1000))
 
     right = []
     with open('screwRight.txt') as fl:
@@ -27,6 +28,7 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
             row = l.split()
             right.append(np.array([float(row[i]) for i in range(2)])[:,None])
     right_pc = np.roll(np.concatenate(right, axis = 1),250, axis = 1)
+    right_pc = ndspline(rep.discrete_length_param(right_pc), right_pc, k = 3)(np.linspace(0,1,1000))
     
     c1,c2 = cusp(16,16,26.2)
     c1,c2 = [c - np.array([13.1,0]) for c in [c1,c2]]
@@ -41,7 +43,7 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
         return x_, y_
 
 
-    def separator_snail(angle_, a = 1/2):
+    def separator_snail(angle_, a = 4/5):
         ''' 
             generate the bottom, left, right and top point cloud of the snail separator 
             ``angle_`` denotes the rotational angle of the rotors and ``a`` tunes the contraction / expansion
@@ -75,11 +77,11 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
         return bottom, right, top, left
 
 
-    def separator_go(go, angle_, reparam = True, a= 1/2):
+    def separator_go(go, angle_, reparam = False, a= 4/5):
         bottom, right, top, left = separator_snail(angle_, a = a)
         minimum = np.min(distance(left,right))
         if reparam and minimum < 0.5:
-            left_verts, right_verts = rep.constrained_arc_length(left, right, 3)
+            left_verts, right_verts = rep.constrained_arc_length(left, right, fac = 1, smooth = True)
         else:
             left_verts, right_verts = [rep.discrete_length_param(j) for j in [left,right]]
         bottom_verts, top_verts = [rep.discrete_length_param(j) for j in [bottom,top]]
@@ -94,7 +96,7 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
     
     ###### generate empty grid object ######
     
-    n,m = 21,41  ## amount of elements
+    n,m = 13,36  ## amount of elements
     p = 3  ## order (same in both directions, can be changed)
     knots = np.prod([ut.nonuniform_kv(p, knotvalues = np.linspace(0,1,j)) for j in [n,m]])  ## create tensor knot-vector
     go_ = ut.tensor_grid_object(knots = knots)  ## empty grid object
@@ -105,7 +107,7 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
     extp_angles = []  ## corresponding angles
     
     for ang in angle:
-        print('computing grid corresponding to angle %.3f' %ang)
+        log.info('Computing grid corresponding to angle %.5f' %ang)
         if len(extp_grids) == 7:  ##  remove grids that are not needed for >= 5-th order extrapolation
             del extp_angles[0]
             del extp_grids[0]
@@ -123,15 +125,29 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = False):
                 onto the point cloud).
             '''
             go.s = go.cons | go.grid_interpolation(extp_angles, extp_grids)(ang)
+            go.quick_plot
         else:  ## initial guess via transfinite-interpolation
             go.set_initial_guess(goal_boundaries, corners)
             
-        ###### solve & save ######
+        ###### solve, detect/repair defects & save ######
             
         go.quick_solve()
+        
         extp_grids.append(go)
         extp_angles.append(ang)
-        go.toxml('xml/theta_%.3f' %ang + '_' + str(go.ndims[0]) + '_' + str(go.ndims[1]))
+        
+        if repair_defects:
+            log.info('Checking for defects')
+            it = 1
+            while True:
+                if go.detect_defects_discrete(ischeme = 20, thresh_ratio = 1e-3) or it > 2:  
+                    break  ## no defect detected or more than ``it`` correction attempts
+                log.warning('Warning, defect detected in converged mapping at angle %.3f' %ang)
+                go = go.ref(1)
+                go.quick_solve()
+                it += 1
+                
+        go.toxml('xml/smooth/theta_%.8f_smooth' %ang + '_' + str(go.ndims[0]) + '_' + str(go.ndims[1]))
         
         
    ###### END ######
