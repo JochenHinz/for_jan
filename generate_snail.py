@@ -126,7 +126,7 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = True, repair_defects = 
                 onto the point cloud).
             '''
             try: ## it'll only work if all grids use the same knot-vector, implementation for arbitrary knots forthcoming
-                assert all([go._knots == grid.knots for grids in extp_grids])
+                assert all([all(go._knots == grid._knots) for grid in extp_grids])
                 go.s = go.cons | go.grid_interpolation(extp_angles, extp_grids)(ang)
             except:
                 go.set_initial_guess(goal_boundaries, corners)
