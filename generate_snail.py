@@ -8,7 +8,7 @@ import preprocessor as prep
 import utilities as ut
 
 
-def main(angle = np.linspace(0,np.pi,200), extrapolate = True, repair_defects = True):
+def main(angle = np.linspace(0,np.pi,200), extrapolate = True, repair_defects = True, save = False):
     
     
     ####### snail point cloud cusp points etc #######
@@ -108,12 +108,13 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = True, repair_defects = 
     
     for ang in angle:
         log.info('Computing grid corresponding to angle %.5f' %ang)
-        if len(extp_grids) == 7:  ##  remove grids that are not needed for >= 5-th order extrapolation
+        if len(extp_grids) == 7:  ##  remove grids that are not needed for <= 5-th order extrapolation
             del extp_angles[0]
             del extp_grids[0]
         go = go_.empty_copy()  ## empty grid object
         go, goal_boundaries, corners = separator_go(go,ang)  ## compute goal_boundaries and corners corresponding to angle
         go.set_cons(goal_boundaries,corners)  ## set constraints resulting from goal_boundaries and corners
+
         
         ###### generate initial guess ######
         
@@ -124,8 +125,11 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = True, repair_defects = 
                 grids (constraining the boundary control points to the least-squares projection of the basis 
                 onto the point cloud).
             '''
-            go.s = go.cons | go.grid_interpolation(extp_angles, extp_grids)(ang)
-            go.quick_plot
+            try: ## it'll only work if all grids use the same knot-vector, implementation for arbitrary knots forthcoming
+                assert all([go._knots == grid.knts for grids in extp_grids])
+                go.s = go.cons | go.grid_interpolation(extp_angles, extp_grids)(ang)
+            except:
+                go.set_initial_guess(goal_boundaries, corners)
         else:  ## initial guess via transfinite-interpolation
             go.set_initial_guess(goal_boundaries, corners)
             
@@ -146,8 +150,9 @@ def main(angle = np.linspace(0,np.pi,200), extrapolate = True, repair_defects = 
                 go = go.ref(1)
                 go.quick_solve()
                 it += 1
-                
-        go.toxml('xml/smooth/theta_%.8f_smooth' %ang + '_' + str(go.ndims[0]) + '_' + str(go.ndims[1]))
+        
+        if save:
+            go.toxml('xml/smooth/theta_%.8f_smooth' %ang + '_' + str(go.ndims[0]) + '_' + str(go.ndims[1]))
         
         
    ###### END ######
